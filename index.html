@@ -1,0 +1,202 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laberinto Pro: 40 Niveles</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #0f0f0f;
+            color: #00ffcc;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden; /* Evita scroll accidental */
+        }
+        .ui {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        canvas {
+            border: 3px solid #00ffcc;
+            box-shadow: 0 0 15px #00ffcc44;
+            background-color: #000;
+        }
+        .btn-reset {
+            margin-top: 15px;
+            background: transparent;
+            color: #ff0044;
+            border: 1px solid #ff0044;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .btn-reset:hover { background: #ff0044; color: white; }
+    </style>
+</head>
+<body>
+
+    <div class="ui">
+        <h1>NIVEL: <span id="level-val">1</span> / 40</h1>
+        <p>Usa las flechas para moverte rápidamente</p>
+    </div>
+
+    <canvas id="mazeCanvas"></canvas>
+
+    <button class="btn-reset" onclick="resetGame()">Reiniciar desde Nivel 1</button>
+
+    <script>
+        const canvas = document.getElementById('mazeCanvas');
+        const ctx = canvas.getContext('2d');
+        const levelSpan = document.getElementById('level-val');
+
+        // Cargar nivel guardado o empezar en 1
+        let level = parseInt(localStorage.getItem('maze_level')) || 1;
+        let size, cellSize;
+        let grid = [];
+        let player = { x: 0, y: 0 };
+        let goal = { x: 0, y: 0 };
+
+        function setupLevelParams() {
+            // Escala la dificultad: Nivel 1 (10x10) -> Nivel 40 (50x50 aprox)
+            size = 10 + Math.floor(level * 1.2); 
+            // Ajustar tamaño visual para que siempre quepa en pantalla
+            const maxDimension = Math.min(window.innerHeight - 250, window.innerWidth - 40);
+            cellSize = Math.floor(maxDimension / size);
+            
+            canvas.width = size * cellSize;
+            canvas.height = size * cellSize;
+        }
+
+        function initGame() {
+            if (level > 40) {
+                alert("¡Felicidades! Has completado los 40 niveles.");
+                resetGame();
+                return;
+            }
+            
+            setupLevelParams();
+            levelSpan.innerText = level;
+            localStorage.setItem('maze_level', level); // Guardar progreso
+            
+            grid = generateMaze(size, size);
+            player = { x: 0, y: 0 };
+            goal = { x: size - 1, y: size - 1 };
+            draw();
+        }
+
+        function generateMaze(cols, rows) {
+            let maze = Array.from({ length: rows }, () => Array(cols).fill(15)); 
+            let stack = [];
+            let current = { x: 0, y: 0 };
+            let visited = new Set(['0,0']);
+
+            while (true) {
+                let neighbors = [];
+                let directions = [
+                    { x: 0, y: -1, bit: 1, rev: 4 },
+                    { x: 1, y: 0, bit: 2, rev: 8 },
+                    { x: 0, y: 1, bit: 4, rev: 1 },
+                    { x: -1, y: 0, bit: 8, rev: 2 }
+                ];
+
+                for (let d of directions) {
+                    let nx = current.x + d.x;
+                    let ny = current.y + d.y;
+                    if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited.has(`${nx},${ny}`)) {
+                        neighbors.push({ ...d, x: nx, y: ny });
+                    }
+                }
+
+                if (neighbors.length > 0) {
+                    let next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    maze[current.y][current.x] &= ~next.bit;
+                    maze[next.y][next.x] &= ~next.rev;
+                    visited.add(`${next.x},${next.y}`);
+                    stack.push(current);
+                    current = { x: next.x, y: next.y };
+                } else if (stack.length > 0) {
+                    current = stack.pop();
+                } else { break; }
+            }
+            return maze;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = "#444";
+            ctx.lineWidth = 1;
+
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    let val = grid[y][x];
+                    if (val & 1) line(x*cellSize, y*cellSize, (x+1)*cellSize, y*cellSize);
+                    if (val & 2) line((x+1)*cellSize, y*cellSize, (x+1)*cellSize, (y+1)*cellSize);
+                    if (val & 4) line(x*cellSize, (y+1)*cellSize, (x+1)*cellSize, (y+1)*cellSize);
+                    if (val & 8) line(x*cellSize, y*cellSize, x*cellSize, (y+1)*cellSize);
+                }
+            }
+
+            // Meta (Estilo Neón)
+            ctx.fillStyle = "#ff0044";
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "#ff0044";
+            ctx.fillRect(goal.x * cellSize + 2, goal.y * cellSize + 2, cellSize - 4, cellSize - 4);
+
+            // Jugador
+            ctx.fillStyle = "#00ffcc";
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = "#00ffcc";
+            ctx.beginPath();
+            ctx.arc(player.x * cellSize + cellSize/2, player.y * cellSize + cellSize/2, cellSize/2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0; // Reset para las líneas
+        }
+
+        function line(x1, y1, x2, y2) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        }
+
+        window.addEventListener('keydown', e => {
+            // Evitar que las flechas muevan la página
+            if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) {
+                e.preventDefault();
+            }
+
+            let cell = grid[player.y][player.x];
+            let moved = false;
+
+            if (e.key === 'ArrowUp' && !(cell & 1)) { player.y--; moved = true; }
+            if (e.key === 'ArrowRight' && !(cell & 2)) { player.x++; moved = true; }
+            if (e.key === 'ArrowDown' && !(cell & 4)) { player.y++; moved = true; }
+            if (e.key === 'ArrowLeft' && !(cell & 8)) { player.x--; moved = true; }
+
+            if (moved) {
+                if (player.x === goal.x && player.y === goal.y) {
+                    level++;
+                    initGame();
+                } else {
+                    draw();
+                }
+            }
+        });
+
+        function resetGame() {
+            if(confirm("¿Seguro que quieres borrar tu progreso y volver al Nivel 1?")) {
+                level = 1;
+                localStorage.setItem('maze_level', 1);
+                initGame();
+            }
+        }
+
+        initGame();
+    </script>
+</body>
+</html>
