@@ -1,202 +1,236 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Laberinto Pro: 40 Niveles</title>
+    <title>Breakout: Niveles Infinitos</title>
     <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            background-color: #0f0f0f;
-            color: #00ffcc;
-            font-family: 'Courier New', Courier, monospace;
-            overflow: hidden; /* Evita scroll accidental */
+        body { background: #121212; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: 'Segoe UI', sans-serif; color: white; overflow: hidden; }
+        canvas { background: #000; border: 3px solid #ff4444; border-radius: 8px; box-shadow: 0 0 20px rgba(255, 68, 68, 0.3); cursor: none; }
+        .info { text-align: center; margin-bottom: 10px; }
+        span { color: #00ffcc; font-weight: bold; font-size: 1.5em; }
+        #level-display { color: #ffcc00; font-weight: bold; font-size: 1.2em; }
+        #overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.9); display: none; flex-direction: column; 
+            justify-content: center; align-items: center; z-index: 10;
         }
-        .ui {
-            text-align: center;
-            margin-bottom: 15px;
+        button { 
+            padding: 12px 25px; font-size: 1.2em; cursor: pointer; 
+            background: #ff4444; color: white; border: none; border-radius: 5px; font-weight: bold;
+            transition: 0.3s;
         }
-        canvas {
-            border: 3px solid #00ffcc;
-            box-shadow: 0 0 15px #00ffcc44;
-            background-color: #000;
-        }
-        .btn-reset {
-            margin-top: 15px;
-            background: transparent;
-            color: #ff0044;
-            border: 1px solid #ff0044;
-            padding: 5px 10px;
-            cursor: pointer;
-        }
-        .btn-reset:hover { background: #ff0044; color: white; }
+        button:hover { background: #ff2222; transform: scale(1.1); }
+        .keys { font-size: 0.8em; color: #888; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <div class="ui">
-        <h1>NIVEL: <span id="level-val">1</span> / 40</h1>
-        <p>Usa las flechas para moverte rápidamente</p>
-    </div>
+<div id="overlay">
+    <h1 style="color: #ff4444; font-size: 3em; margin-bottom: 0;">¡GAME OVER!</h1>
+    <p>Nivel alcanzado: <span id="final-level" style="color: #ffcc00;">1</span></p>
+    <p>Puntuación total: <span id="final-score">0</span></p>
+    <button onclick="resetGame()">REINTENTAR DESDE CERO</button>
+</div>
 
-    <canvas id="mazeCanvas"></canvas>
+<div class="info">
+    <h1>PUNTOS: <span id="score">0</span></h1>
+    <div id="level-display">NIVEL: <span id="level" style="color: #ffcc00;">1</span></div>
+    <div class="keys">Mover: Flechas, WASD o Ratón</div>
+</div>
 
-    <button class="btn-reset" onclick="resetGame()">Reiniciar desde Nivel 1</button>
+<canvas id="gameCanvas" width="600" height="400"></canvas>
 
-    <script>
-        const canvas = document.getElementById('mazeCanvas');
-        const ctx = canvas.getContext('2d');
-        const levelSpan = document.getElementById('level-val');
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreElement = document.getElementById("score");
+    const levelElement = document.getElementById("level");
+    const overlay = document.getElementById("overlay");
+    const finalScoreElement = document.getElementById("final-score");
+    const finalLevelElement = document.getElementById("final-level");
 
-        // Cargar nivel guardado o empezar en 1
-        let level = parseInt(localStorage.getItem('maze_level')) || 1;
-        let size, cellSize;
-        let grid = [];
-        let player = { x: 0, y: 0 };
-        let goal = { x: 0, y: 0 };
+    let score = 0;
+    let level = 1;
+    let ballRadius = 8;
+    let x, y, dx, dy, paddleX;
+    let paddleWidth = 100;
+    const paddleHeight = 12;
+    let gameOver = false;
+    let baseSpeed = 4; // Velocidad inicial de la pelota
 
-        function setupLevelParams() {
-            // Escala la dificultad: Nivel 1 (10x10) -> Nivel 40 (50x50 aprox)
-            size = 10 + Math.floor(level * 1.2); 
-            // Ajustar tamaño visual para que siempre quepa en pantalla
-            const maxDimension = Math.min(window.innerHeight - 250, window.innerWidth - 40);
-            cellSize = Math.floor(maxDimension / size);
-            
-            canvas.width = size * cellSize;
-            canvas.height = size * cellSize;
-        }
+    // Estados de las teclas
+    let rightPressed = false;
+    let leftPressed = false;
 
-        function initGame() {
-            if (level > 40) {
-                alert("¡Felicidades! Has completado los 40 niveles.");
-                resetGame();
-                return;
+    // Ladrillos
+    const rowCount = 5;
+    const columnCount = 7;
+    const brickWidth = 70;
+    const brickHeight = 20;
+    const brickPadding = 10;
+    const brickOffsetTop = 40;
+    const brickOffsetLeft = 25;
+    let bricks = [];
+
+    function initBricks() {
+        for(let c=0; c<columnCount; c++) {
+            bricks[c] = [];
+            for(let r=0; r<rowCount; r++) {
+                bricks[c][r] = { x: 0, y: 0, status: 1 };
             }
-            
-            setupLevelParams();
-            levelSpan.innerText = level;
-            localStorage.setItem('maze_level', level); // Guardar progreso
-            
-            grid = generateMaze(size, size);
-            player = { x: 0, y: 0 };
-            goal = { x: size - 1, y: size - 1 };
-            draw();
         }
+    }
 
-        function generateMaze(cols, rows) {
-            let maze = Array.from({ length: rows }, () => Array(cols).fill(15)); 
-            let stack = [];
-            let current = { x: 0, y: 0 };
-            let visited = new Set(['0,0']);
+    // Escuchar teclado (WASD y Flechas)
+    document.addEventListener("keydown", (e) => {
+        if(e.key === "Right" || e.key === "ArrowRight" || e.key.toLowerCase() === "d") rightPressed = true;
+        else if(e.key === "Left" || e.key === "ArrowLeft" || e.key.toLowerCase() === "a") leftPressed = true;
+    });
 
-            while (true) {
-                let neighbors = [];
-                let directions = [
-                    { x: 0, y: -1, bit: 1, rev: 4 },
-                    { x: 1, y: 0, bit: 2, rev: 8 },
-                    { x: 0, y: 1, bit: 4, rev: 1 },
-                    { x: -1, y: 0, bit: 8, rev: 2 }
-                ];
+    document.addEventListener("keyup", (e) => {
+        if(e.key === "Right" || e.key === "ArrowRight" || e.key.toLowerCase() === "d") rightPressed = false;
+        else if(e.key === "Left" || e.key === "ArrowLeft" || e.key.toLowerCase() === "a") leftPressed = false;
+    });
 
-                for (let d of directions) {
-                    let nx = current.x + d.x;
-                    let ny = current.y + d.y;
-                    if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited.has(`${nx},${ny}`)) {
-                        neighbors.push({ ...d, x: nx, y: ny });
+    // Escuchar ratón
+    document.addEventListener("mousemove", (e) => {
+        let relativeX = e.clientX - canvas.offsetLeft;
+        if(relativeX > 0 && relativeX < canvas.width) {
+            paddleX = relativeX - paddleWidth / 2;
+        }
+    });
+
+    function resetPositions() {
+        x = canvas.width / 2;
+        y = canvas.height - 30;
+        // La velocidad aumenta un poco en cada nivel nuevo
+        let currentSpeed = baseSpeed + (level - 1) * 0.7;
+        dx = currentSpeed;
+        dy = -currentSpeed;
+        paddleX = (canvas.width - paddleWidth) / 2;
+    }
+
+    function resetGame() {
+        score = 0;
+        level = 1;
+        baseSpeed = 4;
+        scoreElement.innerHTML = score;
+        levelElement.innerHTML = level;
+        gameOver = false;
+        overlay.style.display = "none";
+        initBricks();
+        resetPositions();
+        draw();
+    }
+
+    function nextLevel() {
+        level++;
+        levelElement.innerHTML = level;
+        initBricks(); // Regenera todos los ladrillos
+        resetPositions(); // Coloca la pelota al centro pero más rápida
+    }
+
+    function collisionDetection() {
+        let activeBricks = 0;
+        for(let c=0; c<columnCount; c++) {
+            for(let r=0; r<rowCount; r++) {
+                let b = bricks[c][r];
+                if(b.status === 1) {
+                    activeBricks++;
+                    if(x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
+                        dy = -dy;
+                        b.status = 0;
+                        score += 10;
+                        scoreElement.innerHTML = score;
                     }
                 }
-
-                if (neighbors.length > 0) {
-                    let next = neighbors[Math.floor(Math.random() * neighbors.length)];
-                    maze[current.y][current.x] &= ~next.bit;
-                    maze[next.y][next.x] &= ~next.rev;
-                    visited.add(`${next.x},${next.y}`);
-                    stack.push(current);
-                    current = { x: next.x, y: next.y };
-                } else if (stack.length > 0) {
-                    current = stack.pop();
-                } else { break; }
             }
-            return maze;
         }
+        
+        // ¡SI NO QUEDAN LADRILLOS, PASA AL SIGUIENTE NIVEL!
+        if (activeBricks === 0 && !gameOver) {
+            nextLevel();
+        }
+    }
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = "#444";
-            ctx.lineWidth = 1;
+    function drawBall() {
+        ctx.beginPath();
+        ctx.arc(x, y, ballRadius, 0, Math.PI*2);
+        ctx.fillStyle = "#00ffcc";
+        ctx.fill();
+        ctx.closePath();
+    }
 
-            for (let y = 0; y < size; y++) {
-                for (let x = 0; x < size; x++) {
-                    let val = grid[y][x];
-                    if (val & 1) line(x*cellSize, y*cellSize, (x+1)*cellSize, y*cellSize);
-                    if (val & 2) line((x+1)*cellSize, y*cellSize, (x+1)*cellSize, (y+1)*cellSize);
-                    if (val & 4) line(x*cellSize, (y+1)*cellSize, (x+1)*cellSize, (y+1)*cellSize);
-                    if (val & 8) line(x*cellSize, y*cellSize, x*cellSize, (y+1)*cellSize);
+    function drawPaddle() {
+        ctx.beginPath();
+        ctx.roundRect(paddleX, canvas.height - paddleHeight - 5, paddleWidth, paddleHeight, 5);
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    function drawBricks() {
+        for(let c=0; c<columnCount; c++) {
+            for(let r=0; r<rowCount; r++) {
+                if(bricks[c][r].status === 1) {
+                    let brickX = (c * (brickWidth + brickPadding)) + brickOffsetLeft;
+                    let brickY = (r * (brickHeight + brickPadding)) + brickOffsetTop;
+                    bricks[c][r].x = brickX;
+                    bricks[c][r].y = brickY;
+                    ctx.beginPath();
+                    ctx.roundRect(brickX, brickY, brickWidth, brickHeight, 4);
+                    // Los colores cambian según el nivel para que se note el cambio
+                    ctx.fillStyle = `hsl(${(c * 40) + (level * 30)}, 70%, 60%)`;
+                    ctx.fill();
+                    ctx.closePath();
                 }
             }
+        }
+    }
 
-            // Meta (Estilo Neón)
-            ctx.fillStyle = "#ff0044";
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = "#ff0044";
-            ctx.fillRect(goal.x * cellSize + 2, goal.y * cellSize + 2, cellSize - 4, cellSize - 4);
+    function draw() {
+        if(gameOver) return;
 
-            // Jugador
-            ctx.fillStyle = "#00ffcc";
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = "#00ffcc";
-            ctx.beginPath();
-            ctx.arc(player.x * cellSize + cellSize/2, player.y * cellSize + cellSize/2, cellSize/2.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.shadowBlur = 0; // Reset para las líneas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawBricks();
+        drawBall();
+        drawPaddle();
+        collisionDetection();
+
+        // Movimiento por teclado
+        if(rightPressed && paddleX < canvas.width - paddleWidth) {
+            paddleX += 7;
+        } else if(leftPressed && paddleX > 0) {
+            paddleX -= 7;
         }
 
-        function line(x1, y1, x2, y2) {
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
-        }
-
-        window.addEventListener('keydown', e => {
-            // Evitar que las flechas muevan la página
-            if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) {
-                e.preventDefault();
-            }
-
-            let cell = grid[player.y][player.x];
-            let moved = false;
-
-            if (e.key === 'ArrowUp' && !(cell & 1)) { player.y--; moved = true; }
-            if (e.key === 'ArrowRight' && !(cell & 2)) { player.x++; moved = true; }
-            if (e.key === 'ArrowDown' && !(cell & 4)) { player.y++; moved = true; }
-            if (e.key === 'ArrowLeft' && !(cell & 8)) { player.x--; moved = true; }
-
-            if (moved) {
-                if (player.x === goal.x && player.y === goal.y) {
-                    level++;
-                    initGame();
-                } else {
-                    draw();
-                }
-            }
-        });
-
-        function resetGame() {
-            if(confirm("¿Seguro que quieres borrar tu progreso y volver al Nivel 1?")) {
-                level = 1;
-                localStorage.setItem('maze_level', 1);
-                initGame();
+        // Rebotes paredes
+        if(x + dx > canvas.width - ballRadius || x + dx < ballRadius) dx = -dx;
+        if(y + dy < ballRadius) dy = -dy;
+        
+        // Suelo y Pala
+        else if(y + dy > canvas.height - ballRadius - 5) {
+            if(x > paddleX && x < paddleX + paddleWidth) {
+                let impact = x - (paddleX + paddleWidth / 2);
+                dx = impact * 0.15;
+                dy = -dy;
+            } else {
+                // Muerte definitiva
+                gameOver = true;
+                finalScoreElement.innerText = score;
+                finalLevelElement.innerText = level;
+                overlay.style.display = "flex";
+                return;
             }
         }
 
-        initGame();
-    </script>
+        x += dx;
+        y += dy;
+        requestAnimationFrame(draw);
+    }
+
+    resetGame();
+</script>
+
 </body>
 </html>
